@@ -6,7 +6,6 @@ use gimli::{
     Dwarf, Reader, Register, RegisterRule, UnwindContext, UnwindContextStorage, UnwindTableRow,
 };
 use memmap::Mmap;
-use object::SectionKind::Debug;
 use object::{Object, ObjectSection, ReadRef, SymbolMap};
 use std::fmt::{write, Display, Formatter};
 use std::io::Read;
@@ -236,13 +235,22 @@ mod tests {
                 Frame::Dwarf(frame) => {
                     println!(
                         "dwarf name: {:?}",
-                        frame.function.as_ref().map(|x| x.name.to_string())
+                        frame
+                            .function
+                            .as_ref()
+                            .and_then(|x| x.name.to_string().ok())
                     );
-                    println!("dwarf file: {:?}", frame.location.as_ref().map(|x| x.file));
-                    println!("dwarf line: {:?}", frame.location.as_ref().map(|x| x.line));
+                    println!(
+                        "dwarf file: {:?}",
+                        frame.location.as_ref().and_then(|x| x.file)
+                    );
+                    println!(
+                        "dwarf line: {:?}",
+                        frame.location.as_ref().and_then(|x| x.line)
+                    );
                     println!(
                         "dwarf column: {:?}",
-                        frame.location.as_ref().map(|x| x.column)
+                        frame.location.as_ref().and_then(|x| x.column)
                     );
                 }
                 Frame::SymbolMap(symbol) => {

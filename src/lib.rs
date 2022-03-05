@@ -24,11 +24,6 @@ impl<R: Reader> UnwindContextStorage<R> for StoreOnStack {
     type Stack = [UnwindTableRow<R, Self>; 32];
 }
 
-fn init_global_context<'a>() -> GlobalContext<'a> {
-    let images = image::init_images();
-    GlobalContext { images }
-}
-
 struct GlobalContext<'a> {
     images: Vec<image::Image<'a>>,
 }
@@ -46,6 +41,10 @@ struct SymbolInfo<'a> {
 }
 
 impl<'a> GlobalContext<'a> {
+    fn new() -> Self {
+        let images = image::init_images();
+        GlobalContext { images }
+    }
     fn resolve_symbol(&'a self, address: usize) -> SymbolInfo<'a> {
         let mut symbol = SymbolInfo {
             dynamic_address: address,
@@ -85,16 +84,16 @@ impl<'a> GlobalContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{init_global_context, Frame};
+    use crate::{Frame, GlobalContext};
 
     #[test]
     fn it_works() {
-        init_global_context();
+        GlobalContext::new();
     }
 
     #[test]
     fn it_resolves() {
-        let g = init_global_context();
+        let g = GlobalContext::new();
         let resolved = g.resolve_symbol(it_resolves as usize);
         println!("addr: {:?}", resolved.dynamic_address);
         println!("static addr: {:?}", resolved.static_address);

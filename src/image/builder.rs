@@ -1,9 +1,9 @@
 use object::{File, Object, ObjectSection};
 
-pub type SectionMapper = Vec<(
+pub type SectionMapper = &'static [(
     &'static str,
     fn(gimli::BaseAddresses, u64) -> gimli::BaseAddresses,
-)>;
+)];
 
 pub trait Builder {
     fn mapper() -> SectionMapper;

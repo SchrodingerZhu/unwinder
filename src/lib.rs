@@ -1,14 +1,16 @@
 #![feature(rustc_private)]
 #![feature(llvm_asm)]
 
-use std::fmt::{Display, Formatter, write};
-use std::{borrow, fs, slice};
-use std::io::Read;
-use gimli::{Dwarf, Reader, Register, RegisterRule, UnwindContext, UnwindContextStorage, UnwindTableRow};
 use findshlibs::{Segment, SharedLibrary};
+use gimli::{
+    Dwarf, Reader, Register, RegisterRule, UnwindContext, UnwindContextStorage, UnwindTableRow,
+};
 use memmap::Mmap;
-use object::{Object, ObjectSection, ReadRef, SymbolMap};
 use object::SectionKind::Debug;
+use object::{Object, ObjectSection, ReadRef, SymbolMap};
+use std::fmt::{write, Display, Formatter};
+use std::io::Read;
+use std::{borrow, fs, slice};
 
 struct StoreOnStack;
 
@@ -52,19 +54,42 @@ struct GlobalContext<'a> {
     address_contexts: Vec<addr2line::Context<MmapReader<'a>>>,
 }
 
-
 fn init_images<'a>() -> Vec<Image<'a>> {
     let mut vec = Vec::new();
     findshlibs::TargetSharedLibrary::each(|x| unsafe {
         if let Ok((object, mmap, file)) = fs::File::open(x.name())
             .map_err(UnwindError::from)
             .and_then(|f| Ok((memmap::Mmap::map(&f)?, f)))
-            .and_then(|(m, f)| Ok((object::File::parse(slice::from_raw_parts(m.as_ptr(), m.len()))?, m, f))) {
+            .and_then(|(m, f)| {
+                Ok((
+                    object::File::parse(slice::from_raw_parts(m.as_ptr(), m.len()))?,
+                    m,
+                    f,
+                ))
+            })
+        {
             if let Some(base_addresses) = Some(gimli::BaseAddresses::default())
-                .and_then(|acc| object.section_by_name(".text").map(|x| acc.set_text(x.address())))
-                .and_then(|acc| object.section_by_name(".eh_frame").map(|x| acc.set_eh_frame(x.address())))
-                .and_then(|acc| object.section_by_name(".eh_frame_hdr").map(|x| acc.set_eh_frame_hdr(x.address())))
-                .and_then(|acc| object.section_by_name(".got").map(|x| acc.set_got(x.address()))) {
+                .and_then(|acc| {
+                    object
+                        .section_by_name(".text")
+                        .map(|x| acc.set_text(x.address()))
+                })
+                .and_then(|acc| {
+                    object
+                        .section_by_name(".eh_frame")
+                        .map(|x| acc.set_eh_frame(x.address()))
+                })
+                .and_then(|acc| {
+                    object
+                        .section_by_name(".eh_frame_hdr")
+                        .map(|x| acc.set_eh_frame_hdr(x.address()))
+                })
+                .and_then(|acc| {
+                    object
+                        .section_by_name(".got")
+                        .map(|x| acc.set_got(x.address()))
+                })
+            {
                 let symbol_map = object.symbol_map();
                 vec.push(Image {
                     filename: x.name().to_string_lossy().to_string(),
@@ -95,21 +120,32 @@ fn init_global_context<'a>() -> GlobalContext<'a> {
                 .unwrap_or_else(Default::default))
         }) {
             dwarfs.push(dwarf);
-        } else { dwarfs.push(Default::default()) };
+        } else {
+            dwarfs.push(Default::default())
+        };
     }
 
-    let endian = if images[0].object.is_little_endian() {
-        gimli::RunTimeEndian::Little
-    } else {
-        gimli::RunTimeEndian::Big
-    };
+    let endian = images
+        .first()
+        .and_then(|img| {
+            if img.object.is_little_endian() {
+                return Some(gimli::RunTimeEndian::Little);
+            }
+            None
+        })
+        .unwrap_or(gimli::RunTimeEndian::Big);
 
     let dwarf_slices: Vec<gimli::Dwarf<gimli::EndianSlice<'static, gimli::RunTimeEndian>>> = unsafe {
         dwarfs
             .iter()
-            .map(|x|
-                x.borrow(|data|
-                    gimli::EndianSlice::new(slice::from_raw_parts(data.as_ptr(), data.len()), endian)))
+            .map(|x| {
+                x.borrow(|data| {
+                    gimli::EndianSlice::new(
+                        slice::from_raw_parts(data.as_ptr(), data.len()),
+                        endian,
+                    )
+                })
+            })
             .collect()
     };
 
@@ -153,7 +189,8 @@ impl<'a> GlobalContext<'a> {
                 let static_address = address - image.bias;
                 symbol.static_address.replace(static_address);
                 symbol.object_name.replace(&image.filename);
-                if let Ok(mut frames) = self.address_contexts[i].find_frames(static_address as u64) {
+                if let Ok(mut frames) = self.address_contexts[i].find_frames(static_address as u64)
+                {
                     while let Ok(Some(frame)) = frames.next() {
                         symbol.associated_frames.push(Frame::Dwarf(frame));
                     }
@@ -163,7 +200,9 @@ impl<'a> GlobalContext<'a> {
                     let elf_symbol = image.symbol_map.get(static_address as u64);
 
                     if let Some(elf_symbol) = elf_symbol {
-                        symbol.associated_frames.push(Frame::SymbolMap(elf_symbol.name()));
+                        symbol
+                            .associated_frames
+                            .push(Frame::SymbolMap(elf_symbol.name()));
                     }
                 }
                 break;
@@ -176,9 +215,9 @@ impl<'a> GlobalContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{init_global_context, init_images, Frame};
     use libc::c_void;
     use object::Object;
-    use crate::{Frame, init_global_context, init_images};
 
     #[test]
     fn it_works() {
@@ -195,10 +234,16 @@ mod tests {
         for i in resolved.associated_frames {
             match i {
                 Frame::Dwarf(frame) => {
-                    println!("dwarf name: {:?}", frame.function.as_ref().map(|x| x.name.to_string()));
+                    println!(
+                        "dwarf name: {:?}",
+                        frame.function.as_ref().map(|x| x.name.to_string())
+                    );
                     println!("dwarf file: {:?}", frame.location.as_ref().map(|x| x.file));
                     println!("dwarf line: {:?}", frame.location.as_ref().map(|x| x.line));
-                    println!("dwarf column: {:?}", frame.location.as_ref().map(|x| x.column));
+                    println!(
+                        "dwarf column: {:?}",
+                        frame.location.as_ref().map(|x| x.column)
+                    );
                 }
                 Frame::SymbolMap(symbol) => {
                     println!("symbol map name: {}", symbol);

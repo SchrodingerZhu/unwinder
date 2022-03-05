@@ -207,7 +207,7 @@ mod tests {
         for i in resolved.associated_frames {
             match i {
                 Frame::Dwarf(frame) => {
-                    println!("dwarf name: {:?}", frame.function.as_ref().map(|x| x.name));
+                    println!("dwarf name: {:?}", frame.function.as_ref().map(|x| x.name.to_string()));
                     println!("dwarf file: {:?}", frame.location.as_ref().map(|x| x.file));
                     println!("dwarf line: {:?}", frame.location.as_ref().map(|x| x.line));
                     println!("dwarf column: {:?}", frame.location.as_ref().map(|x| x.column));

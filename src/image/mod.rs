@@ -9,18 +9,6 @@ use object::{File as ObjFile, Object, ObjectSection, SymbolMap, SymbolMapEntry, 
 use std::fs::File;
 use std::mem::ManuallyDrop;
 
-#[cfg(target_os = "linux")]
-mod linux;
-
-#[cfg(target_os = "linux")]
-use linux::Builder as ImageBuilder;
-
-#[cfg(target_os = "macos")]
-mod macos;
-
-#[cfg(target_os = "macos")]
-use macos::Builder as ImageBuilder;
-
 pub struct Image<'a> {
     pub filename: String,
     pub base_addresses: gimli::BaseAddresses,
@@ -80,8 +68,6 @@ impl SymbolMapEntry for OwnedSymbolMapName {
 pub type ImageReader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 
 pub fn init_images<'a>() -> Vec<Image<'a>> {
-    use builder::Builder;
-
     let mut vec = Vec::new();
     TargetSharedLibrary::each(|x| {
         if let Ok((object, mmap, file)) = File::open(x.name())
@@ -96,7 +82,7 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
                 ))
             })
         {
-            if let Some(base_addresses) = ImageBuilder::build(&object) {
+            if let Some(base_addresses) = builder::build(&object) {
                 let symbol_map = SymbolMap::new(
                     object
                         .symbol_map()

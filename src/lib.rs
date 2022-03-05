@@ -1,14 +1,12 @@
 #![feature(rustc_private)]
-#![feature(llvm_asm)]
 
-use findshlibs::{Segment, SharedLibrary};
+use findshlibs::SharedLibrary;
 use gimli::{
     Dwarf, Reader, Register, RegisterRule, UnwindContext, UnwindContextStorage, UnwindTableRow,
 };
 use memmap::Mmap;
-use object::{Object, ObjectSection, ReadRef, SymbolMap};
-use std::fmt::{write, Display, Formatter};
-use std::io::Read;
+use object::{Object, ObjectSection, SymbolMap};
+use std::fmt::{Display, Formatter};
 use std::{borrow, fs, slice};
 
 struct StoreOnStack;
@@ -29,8 +27,6 @@ impl<R: Reader> UnwindContextStorage<R> for StoreOnStack {
     type Rules = [(Register, RegisterRule<R>); 192];
     type Stack = [UnwindTableRow<R, Self>; 32];
 }
-
-type Context<R> = UnwindContext<R, StoreOnStack>;
 
 #[derive(Debug)]
 struct Image<'a> {
@@ -214,9 +210,7 @@ impl<'a> GlobalContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{init_global_context, init_images, Frame};
-    use libc::c_void;
-    use object::Object;
+    use crate::{init_global_context, Frame};
 
     #[test]
     fn it_works() {

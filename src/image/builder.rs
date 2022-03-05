@@ -2,7 +2,7 @@ use object::{File, Object, ObjectSection};
 
 pub type SectionMapper = Vec<(
     &'static str,
-    Box<dyn Fn(gimli::BaseAddresses, u64) -> gimli::BaseAddresses>,
+    fn(gimli::BaseAddresses, u64) -> gimli::BaseAddresses,
 )>;
 
 pub trait Builder {

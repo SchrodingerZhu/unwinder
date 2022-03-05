@@ -19,7 +19,6 @@ pub use macos::Builder as ImageBuilder;
 
 pub struct Image<'a> {
     pub filename: String,
-    pub file: std::fs::File,
     pub base_addresses: gimli::BaseAddresses,
     pub bias: usize,
     pub start_address: usize,
@@ -74,6 +73,7 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
     let mut vec = Vec::new();
     findshlibs::TargetSharedLibrary::each(|x| unsafe {
         if let Ok((object, mmap, file)) = std::fs::File::open(x.name())
+            .map(ManuallyDrop::new)
             .map_err(UnwindError::from)
             .and_then(|f| Ok((ManuallyDrop::new(memmap::Mmap::map(&f)?), f)))
             .and_then(|(m, f)| {
@@ -121,7 +121,6 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
 
                 vec.push(Image {
                     filename: x.name().to_string_lossy().to_string(),
-                    file,
                     base_addresses,
                     bias: x.virtual_memory_bias().0,
                     start_address: x.actual_load_addr().0,
@@ -132,6 +131,7 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
                 });
             }
             ManuallyDrop::into_inner(mmap);
+            ManuallyDrop::into_inner(file);
         }
     });
     vec

@@ -1,4 +1,5 @@
-pub mod builder;
+mod builder;
+
 use crate::UnwindError;
 use findshlibs::SharedLibrary;
 use gimli::Dwarf;
@@ -9,13 +10,13 @@ use std::mem::ManuallyDrop;
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::Builder as ImageBuilder;
+use linux::Builder as ImageBuilder;
 
 #[cfg(target_os = "macos")]
 mod macos;
 
 #[cfg(target_os = "macos")]
-pub use macos::Builder as ImageBuilder;
+use macos::Builder as ImageBuilder;
 
 pub struct Image<'a> {
     pub filename: String,
@@ -26,6 +27,12 @@ pub struct Image<'a> {
     pub symbol_map: SymbolMap<OwnedSymbolMapName>,
     pub dwarf: gimli::Dwarf<Vec<u8>>,
     pub address_context: Option<addr2line::Context<ImageReader<'a>>>,
+}
+
+impl<'a> Image<'a> {
+    pub fn has(&self, avma: usize) -> bool {
+        self.start_address <= avma && avma < self.start_address + self.length
+    }
 }
 
 #[derive(Debug)]
@@ -53,6 +60,7 @@ impl OwnedSymbolMapName {
     pub fn name(&self) -> &str {
         &self.name
     }
+
     #[inline]
     pub fn from(origin: &SymbolMapName) -> Self {
         Self::new(origin.address(), origin.name())
@@ -70,6 +78,7 @@ pub type ImageReader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 
 pub fn init_images<'a>() -> Vec<Image<'a>> {
     use builder::Builder;
+
     let mut vec = Vec::new();
     findshlibs::TargetSharedLibrary::each(|x| unsafe {
         if let Ok((object, mmap, file)) = std::fs::File::open(x.name())

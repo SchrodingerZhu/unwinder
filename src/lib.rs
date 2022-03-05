@@ -34,10 +34,21 @@ enum Frame<'a> {
 }
 
 struct SymbolInfo<'a> {
-    dynamic_address: usize,
     object_name: Option<&'a str>,
-    static_address: Option<usize>,
+    avma: usize,
+    svma: Option<usize>,
     associated_frames: Vec<Frame<'a>>,
+}
+
+impl<'a> SymbolInfo<'a> {
+    fn new_unresolved(avma: usize) -> Self {
+        Self {
+            object_name: None,
+            avma,
+            svma: None,
+            associated_frames: Vec::new(),
+        }
+    }
 }
 
 impl<'a> GlobalContext<'a> {
@@ -45,40 +56,41 @@ impl<'a> GlobalContext<'a> {
         let images = image::init_images();
         GlobalContext { images }
     }
-    fn resolve_symbol(&'a self, address: usize) -> SymbolInfo<'a> {
-        let mut symbol = SymbolInfo {
-            dynamic_address: address,
-            object_name: None,
-            static_address: None,
-            associated_frames: Vec::new(),
-        };
-        for image in &self.images {
-            if address >= image.start_address && address < image.start_address + image.length {
-                let static_address = address - image.bias;
-                symbol.static_address.replace(static_address);
-                symbol.object_name.replace(&image.filename);
+
+    fn find_image(&self, avma: usize) -> Option<&image::Image<'a>> {
+        self.images.iter().find(|img| img.has(avma))
+    }
+
+    fn resolve_symbol(&'a self, avma: usize) -> SymbolInfo<'a> {
+        self.find_image(avma)
+            .map(|image| {
+                let svma = avma - image.bias;
+                let object_name = Some(&image.filename as &str);
+                let mut associated_frames = Vec::new();
+
                 if let Some(address_context) = image.address_context.as_ref() {
-                    if let Ok(mut frames) = address_context.find_frames(static_address as u64) {
+                    if let Ok(mut frames) = address_context.find_frames(svma as u64) {
                         while let Ok(Some(frame)) = frames.next() {
-                            symbol.associated_frames.push(Frame::Dwarf(frame));
+                            associated_frames.push(Frame::Dwarf(frame));
                         }
                     }
                 }
-                if symbol.associated_frames.len() == 0 {
-                    // Find the symbol at the current address
-                    let elf_symbol = image.symbol_map.get(static_address as u64);
 
-                    if let Some(elf_symbol) = elf_symbol {
-                        symbol
-                            .associated_frames
-                            .push(Frame::SymbolMap(elf_symbol.name()));
+                if associated_frames.is_empty() {
+                    // Find the symbol at the current address.
+                    if let Some(elf_symbol) = image.symbol_map.get(svma as u64) {
+                        associated_frames.push(Frame::SymbolMap(elf_symbol.name()));
                     }
                 }
-                break;
-            }
-        }
 
-        symbol
+                SymbolInfo {
+                    object_name,
+                    avma,
+                    svma: Some(svma),
+                    associated_frames,
+                }
+            })
+            .unwrap_or(SymbolInfo::new_unresolved(avma))
     }
 }
 
@@ -95,8 +107,8 @@ mod tests {
     fn it_resolves() {
         let g = GlobalContext::new();
         let resolved = g.resolve_symbol(it_resolves as usize);
-        println!("addr: {:?}", resolved.dynamic_address);
-        println!("static addr: {:?}", resolved.static_address);
+        println!("AVMA: {:?}", resolved.avma);
+        println!("SVMA: {:?}", resolved.svma);
         println!("object: {:?}", resolved.object_name);
         for i in resolved.associated_frames {
             match i {

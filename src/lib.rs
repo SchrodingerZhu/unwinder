@@ -129,14 +129,12 @@ fn init_global_context<'a>() -> GlobalContext<'a> {
 
 enum Frame<'a> {
     Dwarf(addr2line::Frame<'a, MmapReader<'a>>),
-    SymbolMap {
-        file: &'a str,
-        symbol: &'a str,
-    },
+    SymbolMap(&'a str),
 }
 
 struct SymbolInfo<'a> {
     dynamic_address: usize,
+    object_name: Option<&'a str>,
     static_address: Option<usize>,
     associated_frames: Vec<Frame<'a>>,
 }
@@ -145,6 +143,7 @@ impl<'a> GlobalContext<'a> {
     fn resolve_symbol(&'a self, address: usize) -> SymbolInfo<'a> {
         let mut symbol = SymbolInfo {
             dynamic_address: address,
+            object_name: None,
             static_address: None,
             associated_frames: Vec::new(),
         };
@@ -153,6 +152,7 @@ impl<'a> GlobalContext<'a> {
             if address >= image.start_address && address < image.start_address + image.length {
                 let static_address = address - image.bias;
                 symbol.static_address.replace(static_address);
+                symbol.object_name.replace(&image.filename);
                 if let Ok(mut frames) = self.address_contexts[i].find_frames(static_address as u64) {
                     while let Ok(Some(frame)) = frames.next() {
                         symbol.associated_frames.push(Frame::Dwarf(frame));
@@ -163,10 +163,7 @@ impl<'a> GlobalContext<'a> {
                     let elf_symbol = image.symbol_map.get(static_address as u64);
 
                     if let Some(elf_symbol) = elf_symbol {
-                        symbol.associated_frames.push(Frame::SymbolMap {
-                            file: &image.filename,
-                            symbol: elf_symbol.name(),
-                        });
+                        symbol.associated_frames.push(Frame::SymbolMap(elf_symbol.name()));
                     }
                 }
                 break;
@@ -190,20 +187,11 @@ mod tests {
 
     #[test]
     fn it_resolves() {
-        fn get_pc_value() -> usize {
-            let mut rip: usize = 0;
-
-            unsafe {
-                llvm_asm!("call 1f\n1: pop rax" : "={rax}"(rip) : : : "intel")
-            }
-
-            rip
-        }
-
         let g = init_global_context();
-        let resolved = g.resolve_symbol(get_pc_value() as usize);
+        let resolved = g.resolve_symbol(it_resolves as usize);
         println!("addr: {:?}", resolved.dynamic_address);
         println!("static addr: {:?}", resolved.static_address);
+        println!("object: {:?}", resolved.object_name);
         for i in resolved.associated_frames {
             match i {
                 Frame::Dwarf(frame) => {
@@ -212,8 +200,7 @@ mod tests {
                     println!("dwarf line: {:?}", frame.location.as_ref().map(|x| x.line));
                     println!("dwarf column: {:?}", frame.location.as_ref().map(|x| x.column));
                 }
-                Frame::SymbolMap{file, symbol} => {
-                    println!("symbol map file: {}", file);
+                Frame::SymbolMap(symbol) => {
                     println!("symbol map name: {}", symbol);
                 }
             }

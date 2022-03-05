@@ -1,14 +1,9 @@
 #![feature(rustc_private)]
 
-use crate::image::builder::Builder;
-use findshlibs::SharedLibrary;
-use gimli::{Dwarf, Reader, Register, RegisterRule, UnwindContextStorage, UnwindTableRow};
-use memmap::Mmap;
-use object::{Object, ObjectSection, SymbolMap};
+use gimli::{Reader, Register, RegisterRule, UnwindContextStorage, UnwindTableRow};
 use std::fmt::{Display, Formatter};
-use std::{borrow, fs, slice};
 
-mod image;
+pub mod image;
 
 struct StoreOnStack;
 
@@ -29,117 +24,17 @@ impl<R: Reader> UnwindContextStorage<R> for StoreOnStack {
     type Stack = [UnwindTableRow<R, Self>; 32];
 }
 
-#[derive(Debug)]
-struct Image<'a> {
-    filename: String,
-    file: std::fs::File,
-    mmap: Mmap,
-    object: object::File<'a, &'a [u8]>,
-    base_addresses: gimli::BaseAddresses,
-    bias: usize,
-    start_address: usize,
-    length: usize,
-    symbol_map: SymbolMap<object::SymbolMapName<'a>>,
+fn init_global_context<'a>() -> GlobalContext<'a> {
+    let images = image::init_images();
+    GlobalContext { images }
 }
-
-type MmapReader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 
 struct GlobalContext<'a> {
-    images: Vec<Image<'a>>,
-    dwarfs: Vec<gimli::Dwarf<borrow::Cow<'a, [u8]>>>,
-    address_contexts: Vec<addr2line::Context<MmapReader<'a>>>,
-}
-
-fn init_images<'a>() -> Vec<Image<'a>> {
-    let mut vec = Vec::new();
-    findshlibs::TargetSharedLibrary::each(|x| unsafe {
-        if let Ok((object, mmap, file)) = fs::File::open(x.name())
-            .map_err(UnwindError::from)
-            .and_then(|f| Ok((memmap::Mmap::map(&f)?, f)))
-            .and_then(|(m, f)| {
-                Ok((
-                    object::File::parse(slice::from_raw_parts(m.as_ptr(), m.len()))?,
-                    m,
-                    f,
-                ))
-            })
-        {
-            if let Some(base_addresses) = image::Builder::build(&object) {
-                let symbol_map = object.symbol_map();
-                vec.push(Image {
-                    filename: x.name().to_string_lossy().to_string(),
-                    file,
-                    mmap,
-                    object,
-                    base_addresses,
-                    bias: x.virtual_memory_bias().0,
-                    start_address: x.actual_load_addr().0,
-                    length: x.len(),
-                    symbol_map,
-                });
-            }
-        }
-    });
-    vec
-}
-
-fn init_global_context<'a>() -> GlobalContext<'a> {
-    let images = init_images();
-    let mut dwarfs = Vec::new();
-    for image in &images {
-        if let Ok(dwarf) = Dwarf::load(|id| -> Result<borrow::Cow<[u8]>, gimli::Error> {
-            Ok(image
-                .object
-                .section_by_name(id.name())
-                .and_then(|x| x.uncompressed_data().ok())
-                .unwrap_or_else(Default::default))
-        }) {
-            dwarfs.push(dwarf);
-        } else {
-            dwarfs.push(Default::default())
-        };
-    }
-
-    let endian = images
-        .first()
-        .and_then(|img| {
-            if img.object.is_little_endian() {
-                return Some(gimli::RunTimeEndian::Little);
-            }
-            None
-        })
-        .unwrap_or(gimli::RunTimeEndian::Big);
-
-    let dwarf_slices: Vec<gimli::Dwarf<gimli::EndianSlice<'static, gimli::RunTimeEndian>>> = unsafe {
-        dwarfs
-            .iter()
-            .map(|x| {
-                x.borrow(|data| {
-                    gimli::EndianSlice::new(
-                        slice::from_raw_parts(data.as_ptr(), data.len()),
-                        endian,
-                    )
-                })
-            })
-            .collect()
-    };
-
-    let address_contexts = {
-        dwarf_slices
-            .into_iter()
-            .map(|x| addr2line::Context::from_dwarf(x).unwrap())
-            .collect()
-    };
-
-    GlobalContext {
-        images,
-        dwarfs,
-        address_contexts,
-    }
+    images: Vec<image::Image<'a>>,
 }
 
 enum Frame<'a> {
-    Dwarf(addr2line::Frame<'a, MmapReader<'a>>),
+    Dwarf(addr2line::Frame<'a, image::ImageReader<'a>>),
     SymbolMap(&'a str),
 }
 
@@ -158,16 +53,16 @@ impl<'a> GlobalContext<'a> {
             static_address: None,
             associated_frames: Vec::new(),
         };
-        for i in 0..self.images.len() {
-            let image = &self.images[i];
+        for image in &self.images {
             if address >= image.start_address && address < image.start_address + image.length {
                 let static_address = address - image.bias;
                 symbol.static_address.replace(static_address);
                 symbol.object_name.replace(&image.filename);
-                if let Ok(mut frames) = self.address_contexts[i].find_frames(static_address as u64)
-                {
-                    while let Ok(Some(frame)) = frames.next() {
-                        symbol.associated_frames.push(Frame::Dwarf(frame));
+                if let Some(address_context) = image.address_context.as_ref() {
+                    if let Ok(mut frames) = address_context.find_frames(static_address as u64) {
+                        while let Ok(Some(frame)) = frames.next() {
+                            symbol.associated_frames.push(Frame::Dwarf(frame));
+                        }
                     }
                 }
                 if symbol.associated_frames.len() == 0 {

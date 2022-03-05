@@ -1,13 +1,14 @@
 #![feature(rustc_private)]
 
+use crate::image::builder::Builder;
 use findshlibs::SharedLibrary;
-use gimli::{
-    Dwarf, Reader, Register, RegisterRule, UnwindContext, UnwindContextStorage, UnwindTableRow,
-};
+use gimli::{Dwarf, Reader, Register, RegisterRule, UnwindContextStorage, UnwindTableRow};
 use memmap::Mmap;
 use object::{Object, ObjectSection, SymbolMap};
 use std::fmt::{Display, Formatter};
 use std::{borrow, fs, slice};
+
+mod image;
 
 struct StoreOnStack;
 
@@ -63,28 +64,7 @@ fn init_images<'a>() -> Vec<Image<'a>> {
                 ))
             })
         {
-            if let Some(base_addresses) = Some(gimli::BaseAddresses::default())
-                .and_then(|acc| {
-                    object
-                        .section_by_name(".text")
-                        .map(|x| acc.set_text(x.address()))
-                })
-                .and_then(|acc| {
-                    object
-                        .section_by_name(".eh_frame")
-                        .map(|x| acc.set_eh_frame(x.address()))
-                })
-                .and_then(|acc| {
-                    object
-                        .section_by_name(".eh_frame_hdr")
-                        .map(|x| acc.set_eh_frame_hdr(x.address()))
-                })
-                .and_then(|acc| {
-                    object
-                        .section_by_name(".got")
-                        .map(|x| acc.set_got(x.address()))
-                })
-            {
+            if let Some(base_addresses) = image::Builder::build(&object) {
                 let symbol_map = object.symbol_map();
                 vec.push(Image {
                     filename: x.name().to_string_lossy().to_string(),

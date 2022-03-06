@@ -1,6 +1,5 @@
 use crate::{GlobalContext, UnwindError};
-use gimli::{EvaluationResult, Register, RegisterRule, UnwindContextStorage};
-use std::borrow::Borrow;
+use gimli::{Register, RegisterRule, UnwindContextStorage};
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;

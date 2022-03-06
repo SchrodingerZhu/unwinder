@@ -1,6 +1,6 @@
 use crate::cursor::state::CursorState;
 use crate::{GlobalContext, UnwindError};
-use gimli::{CfaRule, Reader, Register, RegisterRule, UnwindContextStorage, UnwindTableRow};
+use gimli::{CfaRule, Reader, Register, UnwindContextStorage, UnwindTableRow};
 
 #[derive(Copy, Clone)]
 pub struct FramePointerBasedState {
@@ -12,10 +12,21 @@ const STACK_POINTER_IDX: u16 = 7;
 const RETURN_ADDRESS_IDX: u16 = 16;
 
 impl CursorState for FramePointerBasedState {
+    #[cfg(target_os = "linux")]
     fn new(uctx: &libc::ucontext_t) -> Self {
         Self {
             rip: uctx.uc_mcontext.gregs[libc::REG_RIP as usize] as _,
             rsp: uctx.uc_mcontext.gregs[libc::REG_RSP as usize] as _,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn new(uctx: &libc::ucontext_t) -> Self {
+        unsafe {
+            Self {
+                rip: (*uctx.uc_mcontext).__ss.__rip as _,
+                rsp: (*uctx.uc_mcontext).__ss.__rsp as _,
+            }
         }
     }
 

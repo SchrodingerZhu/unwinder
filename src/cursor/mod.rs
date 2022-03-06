@@ -1,8 +1,8 @@
 use crate::cursor::state::CursorState;
 use crate::image::ImageReader;
-use crate::{GlobalContext, SymbolInfo, UnwindError};
+use crate::{cffi, GlobalContext, SymbolInfo, UnwindError};
 use gimli::{
-    CfaRule, Reader, Register, RegisterRule, StoreOnHeap, UnwindContext, UnwindContextStorage,
+    Reader, Register, RegisterRule, StoreOnHeap, UnwindContext, UnwindContextStorage,
     UnwindSection, UnwindTableRow,
 };
 use libc::ucontext_t;
@@ -42,7 +42,7 @@ where
 
     fn new(g_ctx: &'a GlobalContext<'a>) -> Result<Self, UnwindError> {
         let mut context = MaybeUninit::<libc::ucontext_t>::uninit();
-        let res = unsafe { libc::getcontext(context.as_mut_ptr()) };
+        let res = unsafe { cffi::getcontext(context.as_mut_ptr()) };
         Errno::result(res)
             .map(|_| unsafe { Self::from_ucontext(g_ctx, context.assume_init()) })
             .map_err(Into::into)
@@ -139,6 +139,7 @@ type StaticUnwindCursor<'a, State> = UnwindCursor<'a, InlineStorage, State>;
 #[cfg(test)]
 mod test {
     extern crate rustc_demangle;
+
     use crate::cursor::state::FramePointerBasedState;
     use crate::cursor::Unwinding;
     use crate::{Frame, GlobalContext};

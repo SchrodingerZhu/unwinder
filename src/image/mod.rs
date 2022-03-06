@@ -1,22 +1,13 @@
 mod builder;
 
 use crate::UnwindError;
-use findshlibs::SharedLibrary;
-use gimli::Dwarf;
-use object::{Object, ObjectSection, SymbolMap, SymbolMapEntry, SymbolMapName};
+use addr2line::Context as LineCtx;
+use findshlibs::{SharedLibrary, TargetSharedLibrary};
+use gimli::{Dwarf, EndianSlice, RunTimeEndian};
+use memmap::Mmap;
+use object::{File as ObjFile, Object, ObjectSection, SymbolMap, SymbolMapEntry, SymbolMapName};
+use std::fs::File;
 use std::mem::ManuallyDrop;
-
-#[cfg(target_os = "linux")]
-mod linux;
-
-#[cfg(target_os = "linux")]
-use linux::Builder as ImageBuilder;
-
-#[cfg(target_os = "macos")]
-mod macos;
-
-#[cfg(target_os = "macos")]
-use macos::Builder as ImageBuilder;
 
 pub struct Image<'a> {
     pub filename: String,
@@ -25,8 +16,8 @@ pub struct Image<'a> {
     pub start_address: usize,
     pub length: usize,
     pub symbol_map: SymbolMap<OwnedSymbolMapName>,
-    pub dwarf: gimli::Dwarf<Vec<u8>>,
-    pub address_context: Option<addr2line::Context<ImageReader<'a>>>,
+    pub dwarf: Dwarf<Vec<u8>>,
+    pub address_context: Option<LineCtx<ImageReader<'a>>>,
 }
 
 impl<'a> Image<'a> {
@@ -77,36 +68,30 @@ impl SymbolMapEntry for OwnedSymbolMapName {
 pub type ImageReader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 
 pub fn init_images<'a>() -> Vec<Image<'a>> {
-    use builder::Builder;
-
     let mut vec = Vec::new();
-    findshlibs::TargetSharedLibrary::each(|x| unsafe {
-        if let Ok((object, mmap, file)) = std::fs::File::open(x.name())
+    TargetSharedLibrary::each(|x| {
+        if let Ok((object, mmap, file)) = File::open(x.name())
             .map(ManuallyDrop::new)
             .map_err(UnwindError::from)
-            .and_then(|f| Ok((ManuallyDrop::new(memmap::Mmap::map(&f)?), f)))
-            .and_then(|(m, f)| {
+            .and_then(|f| unsafe { Ok((ManuallyDrop::new(Mmap::map(&f)?), f)) })
+            .and_then(|(m, f)| unsafe {
                 Ok((
-                    object::File::parse(std::slice::from_raw_parts(m.as_ptr(), m.len()))?,
+                    ObjFile::parse(std::slice::from_raw_parts(m.as_ptr(), m.len()))?,
                     m,
                     f,
                 ))
             })
         {
-            if let Some(base_addresses) = ImageBuilder::build(&object) {
+            if let Some(base_addresses) = builder::build(&object) {
                 let symbol_map = SymbolMap::new(
                     object
                         .symbol_map()
                         .symbols()
                         .into_iter()
-                        .map(|x| OwnedSymbolMapName::from(x))
+                        .map(OwnedSymbolMapName::from)
                         .collect(),
                 );
-                let endian = if object.is_little_endian() {
-                    gimli::RunTimeEndian::Little
-                } else {
-                    gimli::RunTimeEndian::Big
-                };
+
                 let dwarf = Dwarf::load(|id| -> Result<Vec<u8>, gimli::Error> {
                     Ok(object
                         .section_by_name(id.name())
@@ -117,16 +102,20 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
                 .ok()
                 .unwrap_or_else(Default::default);
 
-                let dwarf_slice: gimli::Dwarf<gimli::EndianSlice<'a, gimli::RunTimeEndian>> = {
-                    dwarf.borrow(|data| {
-                        gimli::EndianSlice::new(
+                let dwarf_slice: Dwarf<EndianSlice<'a, RunTimeEndian>> = {
+                    dwarf.borrow(|data| unsafe {
+                        EndianSlice::new(
                             std::slice::from_raw_parts(data.as_ptr(), data.len()),
-                            endian,
+                            if object.is_little_endian() {
+                                RunTimeEndian::Little
+                            } else {
+                                RunTimeEndian::Big
+                            },
                         )
                     })
                 };
 
-                let address_context = addr2line::Context::from_dwarf(dwarf_slice).ok();
+                let address_context = LineCtx::from_dwarf(dwarf_slice).ok();
 
                 vec.push(Image {
                     filename: x.name().to_string_lossy().to_string(),

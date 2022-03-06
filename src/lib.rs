@@ -70,8 +70,7 @@ impl<'a> SymbolInfo<'a> {
 
 impl<'a> GlobalContext<'a> {
     fn new() -> Self {
-        let mut images = image::init_images();
-        images.sort_by_key(|x| std::cmp::Reverse(x.start_address));
+        let images = image::load_all();
         GlobalContext { images }
     }
 
@@ -100,8 +99,8 @@ impl<'a> GlobalContext<'a> {
                 let object_name = Some(&image.filename as &str);
                 let mut associated_frames = Vec::new();
 
-                if let Some(address_context) = image.address_context.as_ref() {
-                    if let Ok(mut frames) = address_context.find_frames(svma as u64) {
+                if let Some(line_ctx) = image.line_context.as_ref() {
+                    if let Ok(mut frames) = line_ctx.find_frames(svma as u64) {
                         while let Ok(Some(frame)) = frames.next() {
                             associated_frames.push(Frame::Dwarf(frame));
                         }

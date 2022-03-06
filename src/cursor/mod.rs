@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use crate::cursor::state::CursorState;
 use crate::image::ImageReader;
 use crate::{GlobalContext, SymbolInfo, UnwindError};
 use gimli::{
@@ -7,8 +7,8 @@ use gimli::{
 };
 use libc::ucontext_t;
 use nix::errno::Errno;
+use std::borrow::Borrow;
 use std::mem::MaybeUninit;
-use crate::cursor::state::CursorState;
 
 mod state;
 
@@ -20,8 +20,9 @@ impl<R: Reader> UnwindContextStorage<R> for InlineStorage {
 }
 
 struct UnwindCursor<'a, Storage, State>
-    where Storage : UnwindContextStorage<ImageReader<'a>>,
-          State : CursorState
+where
+    Storage: UnwindContextStorage<ImageReader<'a>>,
+    State: CursorState,
 {
     global_ctx: &'a GlobalContext<'a>,
     local_ctx: UnwindContext<ImageReader<'a>, Storage>,
@@ -29,9 +30,9 @@ struct UnwindCursor<'a, Storage, State>
 }
 
 trait Unwinding<'a, Storage, State>: Sized
-    where
-        Storage : UnwindContextStorage<ImageReader<'a>>,
-        State : CursorState
+where
+    Storage: UnwindContextStorage<ImageReader<'a>>,
+    State: CursorState,
 {
     fn local_context_mut(&mut self) -> &mut UnwindContext<ImageReader<'a>, Storage>;
     fn state_mut(&mut self) -> &mut State;
@@ -54,7 +55,9 @@ trait Unwinding<'a, Storage, State>: Sized
             .resolve_symbol(self.state().get_program_counter())
     }
 
-    fn setup_unwind_info(&mut self) -> Result<&UnwindTableRow<ImageReader<'a>, Storage>, UnwindError> {
+    fn setup_unwind_info(
+        &mut self,
+    ) -> Result<&UnwindTableRow<ImageReader<'a>, Storage>, UnwindError> {
         let pc = self.state().get_program_counter();
         if let Some(img) = self.global_context().find_image(pc) {
             let address = pc as u64 - img.bias as u64;
@@ -97,8 +100,9 @@ trait Unwinding<'a, Storage, State>: Sized
 }
 
 impl<'a, Storage, State> Unwinding<'a, Storage, State> for UnwindCursor<'a, Storage, State>
-    where Storage : UnwindContextStorage<ImageReader<'a>>,
-          State : CursorState
+where
+    Storage: UnwindContextStorage<ImageReader<'a>>,
+    State: CursorState,
 {
     fn local_context_mut(&mut self) -> &mut UnwindContext<ImageReader<'a>, Storage> {
         &mut self.local_ctx
@@ -135,9 +139,9 @@ type StaticUnwindCursor<'a, State> = UnwindCursor<'a, InlineStorage, State>;
 #[cfg(test)]
 mod test {
     extern crate rustc_demangle;
+    use crate::cursor::state::FramePointerBasedState;
     use crate::cursor::Unwinding;
     use crate::{Frame, GlobalContext};
-    use crate::cursor::state::FramePointerBasedState;
 
     #[test]
     fn it_inits_cursor() {

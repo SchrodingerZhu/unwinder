@@ -3,7 +3,7 @@ mod builder;
 use crate::UnwindError;
 use addr2line::Context as LineCtx;
 use findshlibs::{SharedLibrary, TargetSharedLibrary};
-use gimli::{Dwarf, EndianSlice, RunTimeEndian};
+use gimli::{Dwarf, EndianSlice, ParsedEhFrameHdr, RunTimeEndian};
 use memmap::Mmap;
 use object::{File as ObjFile, Object, ObjectSection, SymbolMap, SymbolMapEntry, SymbolMapName};
 use std::fs::File;
@@ -18,6 +18,8 @@ pub struct Image<'a> {
     pub symbol_map: SymbolMap<OwnedSymbolMapName>,
     pub dwarf: Dwarf<Vec<u8>>,
     pub address_context: Option<LineCtx<ImageReader<'a>>>,
+    pub eh_frame_section: (Vec<u8>, gimli::EhFrame<ImageReader<'a>>),
+    pub eh_frame_hdr_section: Option<(Vec<u8>, ParsedEhFrameHdr<ImageReader<'a>>)>,
 }
 
 impl<'a> Image<'a> {
@@ -101,21 +103,45 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
                 })
                 .ok()
                 .unwrap_or_else(Default::default);
-
+                let endian = if object.is_little_endian() {
+                    RunTimeEndian::Little
+                } else {
+                    RunTimeEndian::Big
+                };
                 let dwarf_slice: Dwarf<EndianSlice<'a, RunTimeEndian>> = {
                     dwarf.borrow(|data| unsafe {
                         EndianSlice::new(
                             std::slice::from_raw_parts(data.as_ptr(), data.len()),
-                            if object.is_little_endian() {
-                                RunTimeEndian::Little
-                            } else {
-                                RunTimeEndian::Big
-                            },
+                            endian,
                         )
                     })
                 };
 
                 let address_context = LineCtx::from_dwarf(dwarf_slice).ok();
+                let address_size = std::mem::size_of::<*const ()>() as u8;
+                let eh_frame_hdr_section = object
+                    .section_by_name(".eh_frame_hdr")
+                    .and_then(|x| x.uncompressed_data().ok())
+                    .map(|x| x.to_vec())
+                    .and_then(|data| unsafe {
+                        let slice: &'a [u8] = std::slice::from_raw_parts(data.as_ptr(), data.len());
+                        gimli::EhFrameHdr::new(slice, endian)
+                            .parse(&base_addresses, address_size)
+                            .ok()
+                            .map(|hdr| (data, hdr))
+                    });
+
+                let eh_frame_data = object
+                    .section_by_name(".eh_frame")
+                    .and_then(|x| x.uncompressed_data().ok())
+                    .map(|x| x.to_vec())
+                    .unwrap_or_else(Default::default);
+
+                let eh_frame = unsafe {
+                    let slice: &'a [u8] =
+                        std::slice::from_raw_parts(eh_frame_data.as_ptr(), eh_frame_data.len());
+                    gimli::EhFrame::new(slice, endian)
+                };
 
                 vec.push(Image {
                     filename: x.name().to_string_lossy().to_string(),
@@ -126,6 +152,8 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
                     symbol_map,
                     dwarf,
                     address_context,
+                    eh_frame_section: (eh_frame_data, eh_frame),
+                    eh_frame_hdr_section,
                 });
             }
             ManuallyDrop::into_inner(mmap);

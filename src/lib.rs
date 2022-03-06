@@ -1,27 +1,34 @@
-#![feature(rustc_private)]
+#![cfg_attr(test, feature(rustc_private))]
+use std::fmt::{Debug, Display, Formatter};
 
-use gimli::{Reader, Register, RegisterRule, UnwindContextStorage, UnwindTableRow};
-use std::fmt::{Display, Formatter};
-
+pub mod cursor;
 pub mod image;
 
-struct StoreOnStack;
-
 #[derive(thiserror::Error, Debug)]
-enum UnwindError {
+pub enum UnwindError {
     IOError(#[from] std::io::Error),
     ObjectParsingError(#[from] object::Error),
+    GimliError(#[from] gimli::Error),
+    ErrnoError(#[from] nix::errno::Errno),
+    UnknownProgramCounter(usize),
+    UnwindLogicalError(String),
 }
 
 impl Display for UnwindError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        match self {
+            UnwindError::IOError(e) => Display::fmt(e, f),
+            UnwindError::ObjectParsingError(e) => Display::fmt(e, f),
+            UnwindError::ErrnoError(e) => Display::fmt(e, f),
+            UnwindError::GimliError(e) => Display::fmt(e, f),
+            UnwindError::UnknownProgramCounter(pc) => {
+                write!(f, "unknown program counter: {:#x}", pc)
+            }
+            UnwindError::UnwindLogicalError(s) => {
+                write!(f, "{}", s)
+            }
+        }
     }
-}
-
-impl<R: Reader> UnwindContextStorage<R> for StoreOnStack {
-    type Rules = [(Register, RegisterRule<R>); 192];
-    type Stack = [UnwindTableRow<R, Self>; 32];
 }
 
 struct GlobalContext<'a> {
@@ -53,12 +60,27 @@ impl<'a> SymbolInfo<'a> {
 
 impl<'a> GlobalContext<'a> {
     fn new() -> Self {
-        let images = image::init_images();
+        let mut images = image::init_images();
+        images.sort_by_key(|x| std::cmp::Reverse(x.start_address));
         GlobalContext { images }
     }
 
     fn find_image(&self, avma: usize) -> Option<&image::Image<'a>> {
-        self.images.iter().find(|img| img.has(avma))
+        match self
+            .images
+            .binary_search_by_key(&std::cmp::Reverse(avma), |x| {
+                std::cmp::Reverse(x.start_address)
+            }) {
+            Ok(i) => Some(&self.images[i]),
+            Err(i) if i >= self.images.len() => None,
+            Err(i) => {
+                if self.images[i].has(avma) {
+                    Some(&self.images[i])
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     fn resolve_symbol(&'a self, avma: usize) -> SymbolInfo<'a> {

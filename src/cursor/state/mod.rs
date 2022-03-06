@@ -1,6 +1,9 @@
-use std::{ptr, slice};
 use crate::{GlobalContext, UnwindError};
-use gimli::{Endianity, EndianSlice, EvaluationResult, Expression, Location, Reader, Register, RegisterRule, Section, UnwindContextStorage};
+use gimli::{
+    EndianSlice, Endianity, EvaluationResult, Expression, Location, Reader, Register, RegisterRule,
+    Section, UnwindContextStorage,
+};
+use std::{ptr, slice};
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
@@ -18,18 +21,18 @@ pub trait CursorState: Sized + Copy + Clone {
         row: &gimli::UnwindTableRow<R, S>,
         g_ctx: &GlobalContext,
     ) -> Result<usize, UnwindError>
-        where
-            R: gimli::Reader,
-            S: UnwindContextStorage<R>;
+    where
+        R: gimli::Reader,
+        S: UnwindContextStorage<R>;
 
     fn step<R, S>(
         &mut self,
         row: &gimli::UnwindTableRow<R, S>,
         g_ctx: &GlobalContext,
     ) -> Result<(), UnwindError>
-        where
-            R: gimli::Reader,
-            S: UnwindContextStorage<R>;
+    where
+        R: gimli::Reader,
+        S: UnwindContextStorage<R>;
 
     fn recover_register<R, S>(
         &self,
@@ -37,9 +40,9 @@ pub trait CursorState: Sized + Copy + Clone {
         row: &gimli::UnwindTableRow<R, S>,
         g_ctx: &GlobalContext,
     ) -> Result<usize, UnwindError>
-        where
-            R: gimli::Reader,
-            S: UnwindContextStorage<R>,
+    where
+        R: gimli::Reader,
+        S: UnwindContextStorage<R>,
     {
         self.get_cfa(row, g_ctx)
             .and_then(|cfa| match row.register(reg) {
@@ -69,9 +72,9 @@ pub trait CursorState: Sized + Copy + Clone {
         row: &gimli::UnwindTableRow<R, S>,
         g_ctx: &GlobalContext,
     ) -> Result<usize, UnwindError>
-        where
-            R: gimli::Reader,
-            S: UnwindContextStorage<R>,
+    where
+        R: gimli::Reader,
+        S: UnwindContextStorage<R>,
     {
         let image = g_ctx
             .find_image(cfa)

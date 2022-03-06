@@ -1,6 +1,9 @@
 use crate::image::ImageReader;
 use crate::{GlobalContext, SymbolInfo, UnwindError};
-use gimli::{CfaRule, Reader, Register, RegisterRule, StoreOnHeap, UnwindContext, UnwindContextStorage, UnwindSection, UnwindTableRow};
+use gimli::{
+    CfaRule, Reader, Register, RegisterRule, StoreOnHeap, UnwindContext, UnwindContextStorage,
+    UnwindSection, UnwindTableRow,
+};
 use libc::ucontext_t;
 use nix::errno::Errno;
 use std::mem::MaybeUninit;
@@ -9,8 +12,8 @@ struct InlineStorage;
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64 {
-    use gimli::{CfaRule, Register, RegisterRule, UnwindContextStorage};
     use crate::UnwindError;
+    use gimli::{CfaRule, Register, RegisterRule, UnwindContextStorage};
 
     #[derive(Copy, Clone)]
     pub struct FrameState {
@@ -36,9 +39,9 @@ mod x86_64 {
 
         // only use this after calling recover_frame_pointer
         pub fn step<R, S>(&mut self, row: &gimli::UnwindTableRow<R, S>) -> Result<(), UnwindError>
-            where
-                R: gimli::Reader,
-                S: UnwindContextStorage<R>
+        where
+            R: gimli::Reader,
+            S: UnwindContextStorage<R>,
         {
             match row.cfa() {
                 CfaRule::RegisterAndOffset { register, offset } => {
@@ -50,7 +53,7 @@ mod x86_64 {
                             RegisterRule::Offset(offset) => unsafe {
                                 self.rip = *((self.rsp as i64 + offset) as usize as *mut usize);
                                 return Ok(());
-                            }
+                            },
                             RegisterRule::ValOffset(_) => {}
                             RegisterRule::Register(_) => {}
                             RegisterRule::Expression(_) => {}
@@ -100,7 +103,8 @@ trait Unwinding<'a, S: UnwindContextStorage<ImageReader<'a>>>: Sized {
     fn from_ucontext(g_ctx: &'a GlobalContext<'a>, u_ctx: libc::ucontext_t) -> Self;
 
     fn get_sym_info(&self) -> SymbolInfo<'a> {
-        self.global_context().resolve_symbol(self.state().get_program_counter())
+        self.global_context()
+            .resolve_symbol(self.state().get_program_counter())
     }
 
     fn setup_unwind_info(&mut self) -> Result<&UnwindTableRow<ImageReader<'a>, S>, UnwindError> {
@@ -206,7 +210,7 @@ mod test {
                             Some(map.to_string())
                         }
                     })
-                    .map(|x|rustc_demangle::demangle(&x).to_string())
+                    .map(|x| rustc_demangle::demangle(&x).to_string())
                     .collect::<Vec<_>>()
             );
             println!()

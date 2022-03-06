@@ -2,6 +2,7 @@
 
 use std::fmt::{Debug, Display, Formatter};
 
+mod cffi;
 pub mod cursor;
 pub mod image;
 

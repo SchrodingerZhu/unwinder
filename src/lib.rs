@@ -1,4 +1,5 @@
 #![cfg_attr(test, feature(rustc_private))]
+
 use std::fmt::{Debug, Display, Formatter};
 
 pub mod cursor;
@@ -11,7 +12,9 @@ pub enum UnwindError {
     GimliError(#[from] gimli::Error),
     ErrnoError(#[from] nix::errno::Errno),
     UnknownProgramCounter(usize),
-    UnwindLogicalError(String),
+    UnwindLogicalError(&'static str),
+    NotSupported(&'static str),
+    UnwindEnded,
 }
 
 impl Display for UnwindError {
@@ -27,11 +30,17 @@ impl Display for UnwindError {
             UnwindError::UnwindLogicalError(s) => {
                 write!(f, "{}", s)
             }
+            UnwindError::NotSupported(s) => {
+                write!(f, "{}", s)
+            }
+            UnwindError::UnwindEnded => {
+                write!(f, "cursor cannot step any further")
+            }
         }
     }
 }
 
-struct GlobalContext<'a> {
+pub struct GlobalContext<'a> {
     images: Vec<image::Image<'a>>,
 }
 

@@ -1,5 +1,6 @@
+use std::{ptr, slice};
 use crate::{GlobalContext, UnwindError};
-use gimli::{Register, RegisterRule, UnwindContextStorage};
+use gimli::{Endianity, EndianSlice, EvaluationResult, Expression, Location, Reader, Register, RegisterRule, Section, UnwindContextStorage};
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;

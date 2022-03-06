@@ -1,5 +1,6 @@
 use crate::{GlobalContext, UnwindError};
-use gimli::{Register, RegisterRule, UnwindContextStorage};
+use gimli::{EvaluationResult, Register, RegisterRule, UnwindContextStorage};
+use std::borrow::Borrow;
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
@@ -49,7 +50,7 @@ pub trait CursorState: Sized + Copy + Clone {
                 },
                 RegisterRule::ValOffset(offset) => Ok((cfa as i64 + offset) as usize),
                 RegisterRule::Register(target) => self.get_register(target),
-                RegisterRule::Expression(_) => {
+                RegisterRule::Expression(expr) => {
                     todo!()
                 }
                 RegisterRule::ValExpression(_) => {

@@ -20,6 +20,7 @@ pub struct Image<'a> {
     pub address_context: Option<LineCtx<ImageReader<'a>>>,
     pub eh_frame_section: (Vec<u8>, gimli::EhFrame<ImageReader<'a>>),
     pub eh_frame_hdr_section: Option<(Vec<u8>, ParsedEhFrameHdr<ImageReader<'a>>)>,
+    pub endian: RunTimeEndian,
 }
 
 impl<'a> Image<'a> {
@@ -154,6 +155,7 @@ pub fn init_images<'a>() -> Vec<Image<'a>> {
                     address_context,
                     eh_frame_section: (eh_frame_data, eh_frame),
                     eh_frame_hdr_section,
+                    endian,
                 });
             }
             ManuallyDrop::into_inner(mmap);

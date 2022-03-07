@@ -41,10 +41,11 @@ where
     fn global_context(&self) -> &'a GlobalContext<'a>;
 
     fn new(g_ctx: &'a GlobalContext<'a>) -> Result<Self, UnwindError> {
-        let mut context = MaybeUninit::<libc::ucontext_t>::uninit();
-        let res = unsafe { cffi::getcontext(context.as_mut_ptr()) };
-        Errno::result(res)
-            .map(|_| unsafe { Self::from_ucontext(g_ctx, context.assume_init()) })
+        let mut ucp = MaybeUninit::<libc::ucontext_t>::zeroed();
+        let ret = unsafe { cffi::getcontext(ucp.as_mut_ptr()) };
+        let ctx = unsafe { ucp.assume_init() };
+        Errno::result(ret)
+            .map(|_| Self::from_ucontext(g_ctx, ctx))
             .map_err(Into::into)
     }
 
@@ -133,44 +134,43 @@ where
     }
 }
 
-type DynamicUnwindCursor<'a, State> = UnwindCursor<'a, StoreOnHeap, State>;
-type StaticUnwindCursor<'a, State> = UnwindCursor<'a, InlineStorage, State>;
+type DynamicCursor<'a, State> = UnwindCursor<'a, StoreOnHeap, State>;
+type StaticCursor<'a, State> = UnwindCursor<'a, InlineStorage, State>;
 
 #[cfg(test)]
 mod test {
-    extern crate rustc_demangle;
-
     use crate::cursor::state::FramePointerBasedState;
-    use crate::cursor::Unwinding;
+    use crate::cursor::{DynamicCursor, Unwinding};
     use crate::{Frame, GlobalContext};
 
     #[test]
     fn it_inits_cursor() {
         let g = GlobalContext::new();
-        let mut cursor = super::DynamicUnwindCursor::<FramePointerBasedState>::new(&g).unwrap();
-        while let Ok(_) = cursor.next() {
-            let sym = cursor.get_sym_info();
-            println!("AVMA: {:?}", sym.avma);
-            println!("SVMA: {:?}", sym.svma);
-            println!("object: {:?}", sym.object_name);
-            println!(
-                "name: {:?}",
-                sym.associated_frames
-                    .iter()
-                    .filter_map(|x| match x {
-                        Frame::Dwarf(d) => {
-                            d.function
-                                .as_ref()
-                                .and_then(|x| x.name.to_string().map(|x| x.to_string()).ok())
-                        }
-                        Frame::SymbolMap(map) => {
-                            Some(map.to_string())
-                        }
-                    })
-                    .map(|x| rustc_demangle::demangle(&x).to_string())
-                    .collect::<Vec<_>>()
-            );
-            println!()
-        }
+        if let Ok(mut cursor) = DynamicCursor::<FramePointerBasedState>::new(&g) {
+            while let Ok(_) = cursor.next() {
+                let sym = cursor.get_sym_info();
+                println!("AVMA: {:?}", sym.avma);
+                println!("SVMA: {:?}", sym.svma);
+                println!("object: {:?}", sym.object_name);
+                println!(
+                    "name: {:?}",
+                    sym.associated_frames
+                        .iter()
+                        .filter_map(|x| match x {
+                            Frame::Dwarf(d) => {
+                                d.function
+                                    .as_ref()
+                                    .and_then(|x| x.name.to_string().map(|x| x.to_string()).ok())
+                            }
+                            Frame::SymbolMap(map) => {
+                                Some(map.to_string())
+                            }
+                        })
+                        .map(|x| rustc_demangle::demangle(&x).to_string())
+                        .collect::<Vec<_>>()
+                );
+                println!()
+            }
+        };
     }
 }

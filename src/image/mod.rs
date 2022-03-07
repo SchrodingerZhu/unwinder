@@ -1,17 +1,15 @@
 use crate::image::debug_info::RawDebugInfo;
 use crate::image::symbol_map::OwnedSymbolMap;
-use crate::UnwindError;
 use addr2line::Context as LineCtx;
 use findshlibs::{SharedLibrary, TargetSharedLibrary};
 use gimli::{EndianSlice, ParsedEhFrameHdr, RunTimeEndian};
-use memmap::Mmap;
-use object::{File as ObjFile, Object, ObjectSection};
-use std::fs::File;
+use object::{Object, ObjectSection};
 use std::mem::ManuallyDrop;
 
 mod base_addresses;
 mod debug_info;
 mod line_info;
+mod raw_image;
 mod symbol_map;
 
 pub struct Image<'a> {
@@ -40,22 +38,11 @@ pub fn load_all<'a>() -> Vec<Image<'a>> {
     let mut vec = Vec::new();
 
     TargetSharedLibrary::each(|x| {
-        if let Ok((object, mmap, file)) = File::open(x.name())
-            .map(ManuallyDrop::new)
-            .map_err(UnwindError::from)
-            .and_then(|f| unsafe { Ok((ManuallyDrop::new(Mmap::map(&f)?), f)) })
-            .and_then(|(m, f)| unsafe {
-                Ok((
-                    ObjFile::parse(std::slice::from_raw_parts(m.as_ptr(), m.len()))?,
-                    m,
-                    f,
-                ))
-            })
-        {
+        if let Ok((object, mmap, file)) = raw_image::load(x.name()) {
             if let Some(ba) = base_addresses::load(&object) {
                 let symbol_map = symbol_map::load(&object);
 
-                let dbg_info = debug_info::load(&object);
+                let dbg_info = debug_info::load(x.name(), &object);
                 let endian = if object.is_little_endian() {
                     RunTimeEndian::Little
                 } else {

@@ -1,11 +1,8 @@
-#[cfg(target_os = "linux")]
-mod linux;
-
-#[cfg(target_os = "linux")]
-pub use linux::*;
+pub use libc::*;
 
 #[cfg(target_os = "macos")]
-mod macos;
-
-#[cfg(target_os = "macos")]
-pub use macos::*;
+extern "C" {
+    // XXX: Deprecated on macOS actually, do not expect this to run.  If it
+    // doesn't, use some easy assembly to retrieve the registers.
+    pub fn getcontext(ucp: *mut libc::ucontext_t) -> libc::c_int;
+}

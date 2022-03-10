@@ -61,14 +61,14 @@ where
     ) -> Result<&UnwindTableRow<ImageReader<'a>, Storage>, UnwindError> {
         let pc = self.state().get_program_counter();
         if let Some(img) = self.global_context().find_image(pc) {
-            let address = pc as u64 - img.bias as u64;
+            let svma = pc as u64 - img.bias as u64;
             if let Some(table) = img.eh_frame_hdr_section.as_ref().and_then(|x| x.1.table()) {
                 table
                     .unwind_info_for_address(
                         &img.eh_frame_section.1,
                         &img.base_addresses,
                         self.local_context_mut(),
-                        address,
+                        svma,
                         gimli::EhFrame::cie_from_offset,
                     )
                     .map_err(Into::into)
@@ -78,7 +78,7 @@ where
                     .unwind_info_for_address(
                         &img.base_addresses,
                         self.local_context_mut(),
-                        address,
+                        svma,
                         gimli::EhFrame::cie_from_offset,
                     )
                     .map_err(Into::into)

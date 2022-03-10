@@ -16,7 +16,7 @@ pub struct Image<'a> {
     pub filename: String,
     pub base_addresses: gimli::BaseAddresses,
     pub bias: usize,
-    pub start_address: usize,
+    pub start_avma: usize,
     pub length: usize,
     pub symbol_map: OwnedSymbolMap,
     pub dbg_info: RawDebugInfo,
@@ -28,7 +28,7 @@ pub struct Image<'a> {
 
 impl<'a> Image<'a> {
     pub fn has(&self, avma: usize) -> bool {
-        self.start_address <= avma && avma < self.start_address + self.length
+        self.start_avma <= avma && avma < self.start_avma + self.length
     }
 }
 
@@ -80,7 +80,7 @@ pub fn load_all<'a>() -> Vec<Image<'a>> {
                     filename: x.name().to_string_lossy().to_string(),
                     base_addresses: ba,
                     bias: x.virtual_memory_bias().0,
-                    start_address: x.actual_load_addr().0,
+                    start_avma: x.actual_load_addr().0,
                     length: x.len(),
                     symbol_map,
                     dbg_info,
@@ -95,6 +95,6 @@ pub fn load_all<'a>() -> Vec<Image<'a>> {
         }
     });
 
-    vec.sort_by_key(|x| std::cmp::Reverse(x.start_address));
+    vec.sort_by_key(|x| std::cmp::Reverse(x.start_avma));
     vec
 }

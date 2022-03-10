@@ -78,7 +78,7 @@ impl<'a> GlobalContext<'a> {
         match self
             .images
             .binary_search_by_key(&std::cmp::Reverse(avma), |x| {
-                std::cmp::Reverse(x.start_address)
+                std::cmp::Reverse(x.start_avma)
             }) {
             Ok(i) => Some(&self.images[i]),
             Err(i) if i >= self.images.len() => None,
